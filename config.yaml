@@ -1,0 +1,65 @@
+# Camera / RTSP
+camera:
+  rtsp_url: "rtsp://admin:123456@192.168.10.33:554/"
+  # Optional stream path example (uncomment and adjust):
+  # rtsp_url: "rtsp://admin:123456@192.168.10.33:554/Streaming/Channels/101"
+  read_timeout_sec: 10
+  frame_resize_width: 0 # 1280  # set 0 to keep original
+  skip_frames: 3            # process every Nth frame to save CPU
+
+# Detector
+detector:
+  # If you have a Haar cascade for plates, set a path like: models/haarcascade_russian_plate_number.xml
+  cascade_path: ""
+  min_area: 2000
+  debug_draw: false
+
+# OCR
+ocr:
+  enabled: true
+  tesseract_cmd: ""  # leave empty to use system PATH
+  # OCR tuning
+  psm: 7
+  whitelist: "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+
+# Rules / Datasets
+rules:
+  allowed_csv: "data/allowed.csv"
+  denied_csv:  "data/denied.csv"
+  watchlist_csv: "data/watchlist.csv"  # columns: plate,group(optional)
+  # Debounce same plate events within seconds
+  debounce_sec: 15
+
+# Actions
+actions:
+  gate:
+    mode: "dry_run"  # dry_run | http
+    http:
+      open_url: ""    # e.g., http://192.168.10.50/api/relay/open
+      close_url: ""   # optional
+      method: "POST"  # GET | POST
+      headers: {}
+      payload_template: {}  # optional JSON payload for POST
+  alarm:
+    mode: "dry_run"  # dry_run | http
+    http:
+      trigger_url: ""
+      method: "POST"
+      headers: {}
+      payload_template: {}
+
+# Notifications
+notify:
+  telegram:
+    enabled: false
+    bot_token: "8463888693:AAHS2xsejdWebakw3DOklRljfR9SwQjOCak"
+    chat_ids: [mustafaferhatimamoglu]  # list of chat/channel IDs to notify
+    # Optional mapping to route watchlist groups to specific chat_ids
+    group_routes:
+      # EXAMPLE_GROUP: [12345678, -1001234567890]
+      {}
+    send_photos: false
+
+logging:
+  level: "INFO"   # DEBUG, INFO, WARNING, ERROR
+  forward_to_telegram: false
