@@ -57,6 +57,69 @@ Debug via Telegram
   - Optionally set `notify.telegram.debug_chat_ids` to route debug logs; otherwise `chat_ids` are used.
   - You can disable `--display` and rely entirely on Telegram logs and photos.
 
+Diagnostics
+
+- Run startup diagnostics to verify token and chat IDs:
+  - Enable in config: `notify.telegram.diagnose_on_start: true`, or
+  - CLI: `python -m app.main --diag-telegram`
+- The app calls `getMe` and sends a test message to `chat_ids` and `debug_chat_ids`, logging any Telegram API errors like:
+  - `Bad Request: chat not found` → wrong `chat_id` or bot not added to the group/channel
+  - `Forbidden: bot was blocked by the user` → user blocked bot; DM won’t work
+  - `Forbidden: bot is not a member of the channel chat` → add bot to channel/group and grant rights
+
+Unreadable Plate Notifications
+
+- To receive a photo when a vehicle is detected but the plate cannot be read:
+  - `notify.telegram.notify_unreadable: true`
+  - `notify.telegram.unreadable_debounce_sec: 10` (adjust to control frequency)
+  - The pipeline sends a frame with a caption “Vehicle detected: plate unreadable”.
+
+Dedup for Unreadable Vehicles
+
+- The app uses perceptual hashing (dHash) to avoid sending duplicate unreadable vehicles across frames.
+- Tuning options in `config.yaml`:
+  - `notify.telegram.unreadable_dhash_threshold: 6` — Max Hamming distance to consider two ROIs the same car.
+  - `notify.telegram.unreadable_global_cooldown_sec: 8` — Global minimum seconds between unreadable notifications.
+  - `notify.telegram.unreadable_debounce_sec: 10` — Per-ROI hash debounce window.
+
+Direction Estimation
+
+- Configure how inbound/outbound is labeled in captions:
+  - `direction.enabled: true`
+  - `direction.axis: "y"`  (use "x" for left↔right movement; "y" for up↕down)
+  - `direction.invert: false` (set true if labels look flipped for your camera)
+  - `direction.min_displacement: 20` pixels minimal motion to consider
+  - `direction.gate_line: null` (set to an `x` or `y` coordinate on the chosen axis to detect line crossings)
+- Captions now include the direction, e.g., `Plate ABC123 (in) -> ALLOW` or `Vehicle detected (out): plate unreadable`.
+
+Calibration Helper
+
+- Launch: `python -m app.main --calibrate`
+- Purpose: Visually set `axis`, `invert`, `min_displacement`, and `gate_line` without editing files.
+- Mouse:
+  - Left click: Edit ROI. For rectangle mode: first click = corner 1, second click = corner 2. For polygon mode: each click adds a vertex.
+  - Ctrl + Left click: Set `gate_line` on the active axis at the clicked coordinate.
+- Keys:
+  - `x`: Toggle axis (`y` ↔ `x`)
+  - `i`: Toggle invert (swap IN/OUT)
+  - `+` / `-`: Increase/decrease `min_displacement`
+  - `t`: Toggle ROI enabled/disabled
+  - `p`: Toggle ROI mode (rectangle ↔ polygon)
+  - `n`: Clear ROI (reset rectangle/polygon)
+  - `w`: Save current direction settings into `config.yaml`
+  - `q`: Quit calibration
+- Overlay: Shows orange gate line, last detection center (yellow), and current settings as text.
+- Safety: In calibration mode, actuators (gate/alarm) are suppressed; Telegram bildirimleri gönderilmeye devam eder.
+
+ROI Basics
+
+- Limit detections to a smaller area to avoid road traffic alerts.
+- Config section:
+  - `roi.enabled: true|false`
+  - `roi.mode: rectangle|polygon`
+  - `roi.rect: [x1, y1, x2, y2]`
+  - `roi.polygon: [[x, y], ...]`
+
 Startup/Shutdown Notices
 
 - The app sends a startup (`🚀`) and shutdown (`🛑`) message via Telegram.

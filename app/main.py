@@ -28,6 +28,8 @@ def run():
     parser = argparse.ArgumentParser(description="Plate Gate Controller")
     parser.add_argument("--config", default="config.yaml", help="Path to config.yaml")
     parser.add_argument("--display", action="store_true", help="Show frames with overlays")
+    parser.add_argument("--diag-telegram", action="store_true", help="Run Telegram diagnostics at startup")
+    parser.add_argument("--calibrate", action="store_true", help="Calibration helper UI for direction settings")
     args = parser.parse_args()
 
     cfg = load_config(args.config)
@@ -62,6 +64,10 @@ def run():
     except Exception:
         pass
 
+    # Optional diagnostics
+    if args.diag_telegram or getattr(cfg.notify.telegram, 'diagnose_on_start', False):
+        notifier.diagnose(test_message="Bot diag: startup check", include_main=True, include_debug=True)
+
     pipeline = Pipeline(
         detector=detector,
         ocr=ocr,
@@ -71,6 +77,20 @@ def run():
         notifier=notifier,
         debounce_sec=cfg.rules.debounce_sec,
         debug_draw=cfg.detector.debug_draw,
+        notify_unreadable=cfg.notify.telegram.notify_unreadable,
+        unreadable_debounce_sec=getattr(cfg.notify.telegram, 'unreadable_debounce_sec', 10),
+        unreadable_dhash_threshold=getattr(cfg.notify.telegram, 'unreadable_dhash_threshold', 6),
+        unreadable_global_cooldown_sec=getattr(cfg.notify.telegram, 'unreadable_global_cooldown_sec', 8),
+        direction_enabled=getattr(cfg.direction, 'enabled', True),
+        direction_axis=getattr(cfg.direction, 'axis', 'y'),
+        direction_invert=getattr(cfg.direction, 'invert', False),
+        direction_min_disp=getattr(cfg.direction, 'min_displacement', 20),
+        direction_gate_line=getattr(cfg.direction, 'gate_line', None),
+        suppress_actuators=args.calibrate,  # block actuators in calibration; keep notifications
+        roi_enabled=getattr(cfg.roi, 'enabled', False),
+        roi_mode=getattr(cfg.roi, 'mode', 'rectangle'),
+        roi_rect=tuple(getattr(cfg.roi, 'rect', [0,0,0,0])),
+        roi_polygon=getattr(cfg.roi, 'polygon', []),
     )
 
     stopping = False
@@ -87,6 +107,38 @@ def run():
     last_process = 0.0
     logging.info("Starting Plate Gate Controller")
     try:
+        # Mouse callback for calibration
+        if args.calibrate:
+            win = "Plate Gate"
+            def on_mouse(event, mx, my, flags, param):
+                if event == cv2.EVENT_LBUTTONDOWN:
+                    # Set gate line on current axis
+                    if flags & cv2.EVENT_FLAG_CTRLKEY:
+                        # CTRL+Click: set gate line
+                        if pipeline.direction_axis == 'y':
+                            pipeline.direction_gate_line = my
+                        else:
+                            pipeline.direction_gate_line = mx
+                    else:
+                        # ROI edit
+                        pipeline.roi_enabled = True
+                        pipeline._roi_dirty = True
+                        if pipeline.roi_mode == 'rectangle':
+                            if pipeline._rect_anchor is None:
+                                pipeline._rect_anchor = (mx, my)
+                                pipeline.roi_rect = (mx, my, mx, my)
+                            else:
+                                ax, ay = pipeline._rect_anchor
+                                pipeline.roi_rect = (ax, ay, mx, my)
+                                pipeline._rect_anchor = None
+                        else:
+                            # polygon
+                            if pipeline.roi_polygon is None:
+                                pipeline.roi_polygon = []
+                            pipeline.roi_polygon.append([mx, my])
+            cv2.namedWindow(win)
+            cv2.setMouseCallback(win, on_mouse)
+
         while not stopping:
             frame = stream.read()
             if frame is None:
@@ -97,10 +149,46 @@ def run():
             if frame_count % skip == 0:
                 pipeline.process_frame(frame)
 
-            if args.display or cfg.detector.debug_draw:
+            if args.calibrate:
+                # Draw calibration overlays
+                pipeline.draw_calibration_overlay(frame)
+
+            if args.display or cfg.detector.debug_draw or args.calibrate:
                 cv2.imshow("Plate Gate", frame)
-                if cv2.waitKey(1) & 0xFF == ord('q'):
+                key = cv2.waitKey(1) & 0xFF
+                if key == ord('q'):
                     break
+                if args.calibrate and key != 255:
+                    if key == ord('x'):
+                        pipeline.direction_axis = 'x' if pipeline.direction_axis == 'y' else 'y'
+                        pipeline._last_center = None
+                        pipeline._last_side = None
+                    elif key == ord('i'):
+                        pipeline.direction_invert = not pipeline.direction_invert
+                    elif key == ord('+') or key == ord('='):
+                        pipeline.direction_min_disp = min(200, pipeline.direction_min_disp + 2)
+                    elif key == ord('-') or key == ord('_'):
+                        pipeline.direction_min_disp = max(0, pipeline.direction_min_disp - 2)
+                    elif key == ord('t'):
+                        pipeline.roi_enabled = not pipeline.roi_enabled
+                        pipeline._roi_dirty = True
+                    elif key == ord('p'):
+                        pipeline.roi_mode = 'polygon' if pipeline.roi_mode == 'rectangle' else 'rectangle'
+                        pipeline._roi_dirty = True
+                    elif key == ord('n'):
+                        # clear ROI
+                        pipeline.roi_polygon = []
+                        pipeline.roi_rect = (0, 0, 0, 0)
+                        pipeline._rect_anchor = None
+                        pipeline._roi_dirty = True
+                    elif key == ord('w'):
+                        try:
+                            _write_direction_to_config(args.config, pipeline)
+                            _write_roi_to_config(args.config, pipeline)
+                            logging.info("Calibration settings saved to %s", args.config)
+                            notifier.send_debug_text("💾 Calibration saved to config.yaml")
+                        except Exception as e:
+                            logging.error("Failed to save direction to config: %s", e)
     except Exception as e:
         logging.exception("Fatal error in main loop: %s", e)
     finally:
@@ -111,6 +199,36 @@ def run():
         except Exception:
             pass
         logging.info("Stopped Plate Gate Controller")
+
+def _write_direction_to_config(path: str, pipeline):
+    import yaml
+    with open(path, 'r', encoding='utf-8') as f:
+        data = yaml.safe_load(f) or {}
+    data.setdefault('direction', {})
+    data['direction']['enabled'] = True
+    data['direction']['axis'] = pipeline.direction_axis
+    data['direction']['invert'] = bool(pipeline.direction_invert)
+    data['direction']['min_displacement'] = int(pipeline.direction_min_disp)
+    # gate_line can be None
+    data['direction']['gate_line'] = None if pipeline.direction_gate_line is None else float(pipeline.direction_gate_line)
+    with open(path, 'w', encoding='utf-8') as f:
+        yaml.safe_dump(data, f, sort_keys=False)
+
+def _write_roi_to_config(path: str, pipeline):
+    import yaml
+    with open(path, 'r', encoding='utf-8') as f:
+        data = yaml.safe_load(f) or {}
+    data.setdefault('roi', {})
+    data['roi']['enabled'] = bool(pipeline.roi_enabled)
+    data['roi']['mode'] = pipeline.roi_mode
+    if pipeline.roi_mode == 'rectangle':
+        x1, y1, x2, y2 = pipeline.roi_rect
+        data['roi']['rect'] = [int(x1), int(y1), int(x2), int(y2)]
+        data['roi']['polygon'] = []
+    else:
+        data['roi']['polygon'] = [[int(x), int(y)] for x, y in (pipeline.roi_polygon or [])]
+    with open(path, 'w', encoding='utf-8') as f:
+        yaml.safe_dump(data, f, sort_keys=False)
 
 
 if __name__ == "__main__":

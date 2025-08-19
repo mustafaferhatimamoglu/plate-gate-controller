@@ -1,65 +1,68 @@
-# Camera / RTSP
 camera:
-  rtsp_url: "rtsp://admin:123456@192.168.10.33:554/"
-  # Optional stream path example (uncomment and adjust):
-  # rtsp_url: "rtsp://admin:123456@192.168.10.33:554/Streaming/Channels/101"
+  rtsp_url: rtsp://admin:123456@192.168.10.33:554/
   read_timeout_sec: 10
-  frame_resize_width: 0 # 1280  # set 0 to keep original
-  skip_frames: 3            # process every Nth frame to save CPU
-
-# Detector
+  frame_resize_width: 0
+  skip_frames: 3
 detector:
-  # If you have a Haar cascade for plates, set a path like: models/haarcascade_russian_plate_number.xml
-  cascade_path: ""
+  cascade_path: ''
   min_area: 2000
   debug_draw: false
-
-# OCR
 ocr:
   enabled: true
-  tesseract_cmd: ""  # leave empty to use system PATH
-  # OCR tuning
+  tesseract_cmd: ''
   psm: 7
-  whitelist: "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-
-# Rules / Datasets
+  whitelist: ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789
 rules:
-  allowed_csv: "data/allowed.csv"
-  denied_csv:  "data/denied.csv"
-  watchlist_csv: "data/watchlist.csv"  # columns: plate,group(optional)
-  # Debounce same plate events within seconds
+  allowed_csv: data/allowed.csv
+  denied_csv: data/denied.csv
+  watchlist_csv: data/watchlist.csv
   debounce_sec: 15
-
-# Actions
 actions:
   gate:
-    mode: "dry_run"  # dry_run | http
+    mode: dry_run
     http:
-      open_url: ""    # e.g., http://192.168.10.50/api/relay/open
-      close_url: ""   # optional
-      method: "POST"  # GET | POST
-      headers: {}
-      payload_template: {}  # optional JSON payload for POST
-  alarm:
-    mode: "dry_run"  # dry_run | http
-    http:
-      trigger_url: ""
-      method: "POST"
+      open_url: ''
+      close_url: ''
+      method: POST
       headers: {}
       payload_template: {}
-
-# Notifications
+  alarm:
+    mode: dry_run
+    http:
+      trigger_url: ''
+      method: POST
+      headers: {}
+      payload_template: {}
 notify:
   telegram:
-    enabled: false
-    bot_token: "8463888693:AAHS2xsejdWebakw3DOklRljfR9SwQjOCak"
-    chat_ids: [mustafaferhatimamoglu]  # list of chat/channel IDs to notify
-    # Optional mapping to route watchlist groups to specific chat_ids
-    group_routes:
-      # EXAMPLE_GROUP: [12345678, -1001234567890]
-      {}
-    send_photos: false
-
+    enabled: true
+    bot_token: 8463888693:AAHS2xsejdWebakw3DOklRljfR9SwQjOCak
+    chat_ids:
+    - 6069420562
+    group_routes: {}
+    send_photos: true
+    notify_unreadable: true
+    unreadable_debounce_sec: 10
+    unreadable_dhash_threshold: 6
+    unreadable_global_cooldown_sec: 8
+    diagnose_on_start: false
+    debug_chat_ids:
+    - 6069420562
 logging:
-  level: "INFO"   # DEBUG, INFO, WARNING, ERROR
+  level: INFO
   forward_to_telegram: false
+direction:
+  enabled: true
+  axis: x
+  invert: false
+  min_displacement: 150
+  gate_line: 306.0
+roi:
+  enabled: true
+  mode: rectangle
+  rect:
+  - 82
+  - 56
+  - 688
+  - 561
+  polygon: []

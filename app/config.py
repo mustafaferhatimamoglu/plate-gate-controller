@@ -66,6 +66,12 @@ class TelegramConfig:
     group_routes: Dict[str, List[int]] = field(default_factory=dict)
     send_photos: bool = False
     debug_chat_ids: List[int] = field(default_factory=list)
+    diagnose_on_start: bool = False
+    notify_unreadable: bool = False
+    unreadable_debounce_sec: int = 10
+    unreadable_dhash_threshold: int = 6
+    unreadable_global_cooldown_sec: int = 8
+    debug_chat_ids: List[int] = field(default_factory=list)
 
 
 @dataclass
@@ -80,6 +86,23 @@ class LoggingConfig:
 
 
 @dataclass
+class DirectionConfig:
+    enabled: bool = True
+    axis: str = "y"  # "x" or "y"
+    invert: bool = False
+    min_displacement: int = 20
+    gate_line: Optional[float] = None
+
+
+@dataclass
+class ROIConfig:
+    enabled: bool = False
+    mode: str = "rectangle"  # rectangle | polygon
+    rect: List[float] = field(default_factory=lambda: [0, 0, 0, 0])
+    polygon: List[List[float]] = field(default_factory=list)
+
+
+@dataclass
 class AppConfig:
     camera: CameraConfig = field(default_factory=CameraConfig)
     detector: DetectorConfig = field(default_factory=DetectorConfig)
@@ -89,6 +112,8 @@ class AppConfig:
     actions_alarm: AlarmConfig = field(default_factory=AlarmConfig)
     notify: NotifyConfig = field(default_factory=NotifyConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
+    direction: DirectionConfig = field(default_factory=DirectionConfig)
+    roi: ROIConfig = field(default_factory=ROIConfig)
 
 
 def _dict_to_dataclass(d: dict) -> AppConfig:
@@ -104,6 +129,8 @@ def _dict_to_dataclass(d: dict) -> AppConfig:
     telegram = TelegramConfig(**d.get("notify", {}).get("telegram", {}))
     notify = NotifyConfig(telegram=telegram)
     logging_cfg = LoggingConfig(**d.get("logging", {}))
+    direction_cfg = DirectionConfig(**d.get("direction", {}))
+    roi_cfg = ROIConfig(**d.get("roi", {}))
     return AppConfig(
         camera=camera,
         detector=detector,
@@ -113,6 +140,8 @@ def _dict_to_dataclass(d: dict) -> AppConfig:
         actions_alarm=alarm,
         notify=notify,
         logging=logging_cfg,
+        direction=direction_cfg,
+        roi=roi_cfg,
     )
 
 
