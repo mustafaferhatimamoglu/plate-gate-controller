@@ -71,12 +71,12 @@ class TelegramConfig:
     unreadable_debounce_sec: int = 10
     unreadable_dhash_threshold: int = 6
     unreadable_global_cooldown_sec: int = 8
-    debug_chat_ids: List[int] = field(default_factory=list)
 
 
 @dataclass
 class NotifyConfig:
     telegram: TelegramConfig = field(default_factory=TelegramConfig)
+    telegram_debug: TelegramConfig = field(default_factory=TelegramConfig)
 
 
 @dataclass
@@ -92,6 +92,7 @@ class DirectionConfig:
     invert: bool = False
     min_displacement: int = 20
     gate_line: Optional[float] = None
+    require_line_cross: bool = False
 
 
 @dataclass
@@ -114,6 +115,8 @@ class AppConfig:
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     direction: DirectionConfig = field(default_factory=DirectionConfig)
     roi: ROIConfig = field(default_factory=ROIConfig)
+    notify_filters: Dict[str, object] = field(default_factory=dict)
+    notify_routes: Dict[str, str] = field(default_factory=dict)
 
 
 def _dict_to_dataclass(d: dict) -> AppConfig:
@@ -127,7 +130,8 @@ def _dict_to_dataclass(d: dict) -> AppConfig:
     alarm = AlarmConfig(**{k: v for k, v in actions.get("alarm", {}).items() if k != "http"})
     alarm.http = HTTPConfig(**actions.get("alarm", {}).get("http", {}))
     telegram = TelegramConfig(**d.get("notify", {}).get("telegram", {}))
-    notify = NotifyConfig(telegram=telegram)
+    telegram_debug = TelegramConfig(**d.get("notify", {}).get("telegram_debug", {}))
+    notify = NotifyConfig(telegram=telegram, telegram_debug=telegram_debug)
     logging_cfg = LoggingConfig(**d.get("logging", {}))
     direction_cfg = DirectionConfig(**d.get("direction", {}))
     roi_cfg = ROIConfig(**d.get("roi", {}))
@@ -142,6 +146,8 @@ def _dict_to_dataclass(d: dict) -> AppConfig:
         logging=logging_cfg,
         direction=direction_cfg,
         roi=roi_cfg,
+        notify_filters=d.get("notify_filters", {}),
+        notify_routes=d.get("notify_routes", {}),
     )
 
 

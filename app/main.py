@@ -42,7 +42,7 @@ def run():
     rules = load_rules(cfg.rules.allowed_csv, cfg.rules.denied_csv, cfg.rules.watchlist_csv)
     gate = GateActuator(cfg.actions_gate.mode, http=cfg.actions_gate.http.__dict__ if hasattr(cfg.actions_gate.http, "__dict__") else None)
     alarm = AlarmActuator(cfg.actions_alarm.mode, http=cfg.actions_alarm.http.__dict__ if hasattr(cfg.actions_alarm.http, "__dict__") else None)
-    notifier = TelegramNotifier(
+    notifier_main = TelegramNotifier(
         enabled=cfg.notify.telegram.enabled,
         bot_token=cfg.notify.telegram.bot_token,
         chat_ids=cfg.notify.telegram.chat_ids,
@@ -50,17 +50,30 @@ def run():
         send_photos=cfg.notify.telegram.send_photos,
         debug_chat_ids=cfg.notify.telegram.debug_chat_ids,
     )
+    # Optional second bot for debug routing
+    notifier_debug = None
+    if getattr(cfg.notify, 'telegram_debug', None) and cfg.notify.telegram_debug.bot_token:
+        notifier_debug = TelegramNotifier(
+            enabled=cfg.notify.telegram_debug.enabled,
+            bot_token=cfg.notify.telegram_debug.bot_token,
+            chat_ids=cfg.notify.telegram_debug.chat_ids,
+            group_routes={},
+            send_photos=True,
+            debug_chat_ids=[],
+        )
 
-    if cfg.logging.forward_to_telegram and cfg.notify.telegram.enabled:
-        tg_handler = TelegramLogHandler(notifier, level=getattr(logging, cfg.logging.level.upper(), logging.INFO), prefix="[DEBUG]")
+    if cfg.logging.forward_to_telegram and (cfg.notify.telegram.enabled or (getattr(cfg.notify, 'telegram_debug', None) and cfg.notify.telegram_debug.enabled)):
+        # Prefer debug bot for logs if configured
+        log_notifier = notifier_debug if (notifier_debug and notifier_debug.enabled) else notifier_main
+        tg_handler = TelegramLogHandler(log_notifier, level=getattr(logging, cfg.logging.level.upper(), logging.INFO), prefix="[DEBUG]")
         tg_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
         logging.getLogger().addHandler(tg_handler)
 
     # Explicit startup notification (goes to debug channel or fallback to chat_ids)
     try:
-        notifier.send_debug_text("🚀 Plate Gate Controller started")
-        # Also send a short non-debug notice to main chats
-        notifier.send_text("🚀 Plate Gate Controller started")
+        if notifier_debug and notifier_debug.enabled:
+            notifier_debug.send_text("🚀 Plate Gate Controller started")
+        notifier_main.send_text("🚀 Plate Gate Controller started")
     except Exception:
         pass
 
@@ -74,7 +87,7 @@ def run():
         rules=rules,
         gate=gate,
         alarm=alarm,
-        notifier=notifier,
+        notifier=notifier_main,
         debounce_sec=cfg.rules.debounce_sec,
         debug_draw=cfg.detector.debug_draw,
         notify_unreadable=cfg.notify.telegram.notify_unreadable,
@@ -91,7 +104,18 @@ def run():
         roi_mode=getattr(cfg.roi, 'mode', 'rectangle'),
         roi_rect=tuple(getattr(cfg.roi, 'rect', [0,0,0,0])),
         roi_polygon=getattr(cfg.roi, 'polygon', []),
+        # Filters and routes
+        filter_only_in=bool(getattr(cfg, 'notify_filters', {}).get('only_in_direction', False)),
+        unreadable_min_hits=int(getattr(cfg, 'notify_filters', {}).get('unreadable_min_hits', 1)),
+        hit_ttl_sec=float(getattr(cfg, 'notify_filters', {}).get('hit_ttl_sec', 1.5)),
+        center_tolerance_px=int(getattr(cfg, 'notify_filters', {}).get('center_tolerance_px', 40)),
+        dir_require_cross=bool(getattr(cfg.direction, 'require_line_cross', False)),
+        route_unreadable=str(getattr(cfg, 'notify_routes', {}).get('unreadable', 'debug')),
+        route_readable=str(getattr(cfg, 'notify_routes', {}).get('readable', 'main')),
     )
+    # Attach optional debug notifier for routing
+    pipeline.notifier_main = notifier_main
+    pipeline.notifier_debug = notifier_debug
 
     stopping = False
 
@@ -195,7 +219,9 @@ def run():
         stream.stop()
         cv2.destroyAllWindows()
         try:
-            notifier.send_debug_text("🛑 Plate Gate Controller stopped")
+            if notifier_debug and notifier_debug.enabled:
+                notifier_debug.send_text("🛑 Plate Gate Controller stopped")
+            notifier_main.send_text("🛑 Plate Gate Controller stopped")
         except Exception:
             pass
         logging.info("Stopped Plate Gate Controller")

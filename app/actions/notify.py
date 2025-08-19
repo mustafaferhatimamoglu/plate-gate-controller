@@ -65,6 +65,19 @@ class TelegramNotifier:
             if not ok:
                 logging.warning("Failed to send Telegram photo to %s: %s", chat_id, info)
 
+    def send_photo_debug(self, image_bgr, caption: str):
+        import cv2
+        if not self.send_photos:
+            return self.send_debug_text(caption)
+        _, buf = cv2.imencode('.jpg', image_bgr)
+        targets = self.debug_chat_ids if self.debug_chat_ids else self.chat_ids
+        for chat_id in targets:
+            files = {"photo": ("frame.jpg", buf.tobytes(), "image/jpeg")}
+            data = {"chat_id": chat_id, "caption": caption}
+            ok, info = self._send("sendPhoto", data=data, files=files)
+            if not ok:
+                logging.warning("Failed to send Telegram debug photo to %s: %s", chat_id, info)
+
     def diagnose(self, test_message: str = "Diagnostic test", include_main: bool = True, include_debug: bool = True):
         if not self.bot_token:
             logging.error("Telegram diagnose: missing bot token")

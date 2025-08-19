@@ -48,6 +48,10 @@ notify:
     diagnose_on_start: false
     debug_chat_ids:
     - 6069420562
+  telegram_debug:
+    enabled: false
+    bot_token: ""
+    chat_ids: []
 logging:
   level: INFO
   forward_to_telegram: false
@@ -55,14 +59,23 @@ direction:
   enabled: true
   axis: x
   invert: false
-  min_displacement: 150
-  gate_line: 306.0
+  min_displacement: 162
+  gate_line: 342.0
+  require_line_cross: false
 roi:
   enabled: true
   mode: rectangle
   rect:
-  - 82
-  - 56
-  - 688
-  - 561
+  - 219
+  - 1
+  - 7
+  - 211
   polygon: []
+notify_filters:
+  only_in_direction: false
+  unreadable_min_hits: 1
+  hit_ttl_sec: 1.0
+  center_tolerance_px: 40
+notify_routes:
+  unreadable: both
+  readable: both

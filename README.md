@@ -120,6 +120,19 @@ ROI Basics
   - `roi.rect: [x1, y1, x2, y2]`
   - `roi.polygon: [[x, y], ...]`
 
+Noise Control and Routing
+
+- Direction gating:
+  - `direction.require_line_cross: true` → Sadece kapı çizgisi aşıldığında bildir.
+  - `notify_filters.only_in_direction: true` → Yalnızca içeri yön (in) için bildir.
+- Stabilizasyon (false positive azaltma):
+  - `notify_filters.unreadable_min_hits: 2` → Bildirimden önce aynı konumu N kez gör.
+  - `notify_filters.hit_ttl_sec: 1.5` → Bu N gözlemin toplanacağı süre penceresi.
+  - `notify_filters.center_tolerance_px: 40` → Aynı kabul edilmesi için merkez yakınlık toleransı.
+- Bildirim yönlendirme:
+  - `notify_routes.unreadable: debug|main|both` → Okunamayan araç fotoğrafları nereye gitsin.
+  - `notify_routes.readable: main|both` → Okunabilen plakalar nereye gitsin.
+
 Startup/Shutdown Notices
 
 - The app sends a startup (`🚀`) and shutdown (`🛑`) message via Telegram.

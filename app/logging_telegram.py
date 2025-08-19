@@ -20,4 +20,3 @@ class TelegramLogHandler(logging.Handler):
         except Exception:
             # Avoid raising from logging
             pass
-

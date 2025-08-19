@@ -35,11 +35,20 @@ class Pipeline:
         direction_invert: bool = False,
         direction_min_disp: int = 20,
         direction_gate_line: Optional[float] = None,
+        dir_require_cross: bool = False,
         # ROI
         roi_enabled: bool = False,
         roi_mode: str = "rectangle",
         roi_rect: Optional[Tuple[float, float, float, float]] = None,
         roi_polygon: Optional[list] = None,
+        # Filters
+        filter_only_in: bool = False,
+        unreadable_min_hits: int = 1,
+        hit_ttl_sec: float = 1.5,
+        center_tolerance_px: int = 40,
+        # Routes
+        route_unreadable: str = "debug",
+        route_readable: str = "main",
     ):
         self.detector = detector
         self.ocr = ocr
@@ -63,6 +72,7 @@ class Pipeline:
         self.direction_invert = direction_invert
         self.direction_min_disp = max(0, int(direction_min_disp))
         self.direction_gate_line = direction_gate_line
+        self.dir_require_cross = dir_require_cross
         self._last_center: Optional[Tuple[float, float]] = None
         self._last_side: Optional[int] = None
         self.suppress_actuators = suppress_actuators
@@ -75,6 +85,15 @@ class Pipeline:
         self._roi_mask_size = None
         self._roi_dirty = True
         self._rect_anchor = None  # for calibration rectangle clicks
+        # Filters
+        self.filter_only_in = filter_only_in
+        self.unreadable_min_hits = max(1, int(unreadable_min_hits))
+        self.hit_ttl_sec = float(hit_ttl_sec)
+        self.center_tolerance_px = int(center_tolerance_px)
+        self._hit_map: Dict[Tuple[int, int], Tuple[int, float]] = {}
+        # Routes
+        self.route_unreadable = route_unreadable
+        self.route_readable = route_readable
 
     def _should_emit(self, plate: str) -> bool:
         now = time.time()
@@ -162,7 +181,13 @@ class Pipeline:
             plate = self.ocr.read_text(roi) or ""
             plate = plate.strip()
             current_center = (x + w / 2.0, y + h / 2.0)
-            direction = self._estimate_direction(current_center)
+            direction, crossed = self._direction_and_cross(current_center)
+            if self.dir_require_cross and not crossed:
+                self._update_direction_state(current_center)
+                continue
+            if self.filter_only_in and (direction != 'in'):
+                self._update_direction_state(current_center)
+                continue
             if self.roi_enabled and not self._point_in_roi(current_center):
                 # outside ROI; skip
                 continue
@@ -199,8 +224,17 @@ class Pipeline:
             current_center = (ux + uw / 2.0, uy + uh / 2.0)
             if self.roi_enabled and not self._point_in_roi(current_center):
                 return None
-            direction = self._estimate_direction(current_center)
+            direction, crossed = self._direction_and_cross(current_center)
+            if self.dir_require_cross and not crossed:
+                self._update_direction_state(current_center)
+                return None
+            if self.filter_only_in and (direction != 'in'):
+                self._update_direction_state(current_center)
+                return None
             now = time.time()
+            if not self._accumulate_hit(current_center, now):
+                self._update_direction_state(current_center)
+                return None
             if not self._unreadable_duplicate(unreadable_dhash, now):
                 if unreadable_hash is None or self._should_emit_unreadable(unreadable_hash):
                     x, y, w, h = unreadable_box
@@ -209,7 +243,7 @@ class Pipeline:
                     if self.debug_draw:
                         cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 0, 0), 2)
                         cv2.putText(frame, f"unreadable{dir_text}", (x, y - 6), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 0), 2)
-                    self.notifier.send_photo(frame, caption)
+                    self._route_photo(frame, caption, unreadable=True)
                     self._record_unreadable(unreadable_dhash, now)
                     logging.info("Unreadable plate candidate notified")
             self._update_direction_state(current_center)
@@ -223,9 +257,17 @@ class Pipeline:
         group = self.rules.watchlist.get(plate)
         # Send notification always
         if decision == "watch":
-            self.notifier.send_photo(frame, caption, group=group)
+            # route watch to main channel
+            self._route_photo(frame, caption, unreadable=False)
         else:
-            self.notifier.send_photo(frame, caption)
+            # route readable based on config
+            if self.route_readable == 'both':
+                self._route_photo(frame, caption, unreadable=False)
+                self._route_photo(frame, caption, unreadable=False)
+            elif self.route_readable == 'debug':
+                self._route_photo(frame, caption, unreadable=False)
+            else:
+                self._route_photo(frame, caption, unreadable=False)
         # Suppress actuators if requested (e.g., during calibration)
         if self.suppress_actuators:
             return
@@ -286,31 +328,29 @@ class Pipeline:
             cv2.putText(frame, s, (10, y0), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
             y0 += 22
 
-    def _estimate_direction(self, current_center: Tuple[float, float]) -> Optional[str]:
+    def _direction_and_cross(self, current_center: Tuple[float, float]) -> Tuple[Optional[str], bool]:
         if not self.direction_enabled:
-            return None
+            return None, False
         last = self._last_center
         if last is None:
-            return None
+            return None, False
         ax = self.direction_axis
         delta = (current_center[0] - last[0]) if ax == "x" else (current_center[1] - last[1])
         if abs(delta) < self.direction_min_disp:
             # not enough movement
-            return None
+            return None, False
         # If gate_line is provided, prefer side change semantics
+        crossed = False
         if self.direction_gate_line is not None and self._last_side is not None:
             cur_side = 0 if ((current_center[0] if ax == "x" else current_center[1]) < self.direction_gate_line) else 1
             if cur_side != self._last_side:
-                # Determine direction based on crossing direction
-                dir_val = "in" if (delta > 0) else "out"
-                if self.direction_invert:
-                    dir_val = "out" if dir_val == "in" else "in"
-                return dir_val
+                crossed = True
+        # Determine direction based on velocity sign
         # Fallback to velocity sign
         dir_val = "in" if (delta > 0) else "out"
         if self.direction_invert:
             dir_val = "out" if dir_val == "in" else "in"
-        return dir_val
+        return dir_val, crossed
 
     def _update_direction_state(self, current_center: Tuple[float, float]):
         self._last_center = current_center
@@ -318,6 +358,52 @@ class Pipeline:
             ax = self.direction_axis
             val = current_center[0] if ax == "x" else current_center[1]
             self._last_side = 0 if val < self.direction_gate_line else 1
+
+    def _accumulate_hit(self, center: Tuple[float, float], now: float) -> bool:
+        # Quantize center to grid cell
+        tol = max(1, self.center_tolerance_px)
+        key = (int(round(center[0] / tol)), int(round(center[1] / tol)))
+        cnt, ts = self._hit_map.get(key, (0, 0.0))
+        if now - ts > self.hit_ttl_sec:
+            cnt = 0
+        cnt += 1
+        self._hit_map[key] = (cnt, now)
+        # prune old keys
+        if len(self._hit_map) > 1000:
+            old_keys = [k for k, v in self._hit_map.items() if now - v[1] > self.hit_ttl_sec]
+            for k in old_keys[:500]:
+                self._hit_map.pop(k, None)
+        return cnt >= self.unreadable_min_hits
+
+    def _route_photo(self, frame, caption: str, unreadable: bool = False):
+        route = self.route_unreadable if unreadable else self.route_readable
+        if route == 'both':
+            # send to both main and debug
+            if hasattr(self, 'notifier_main') and self.notifier_main:
+                self.notifier_main.send_photo(frame, caption)
+            else:
+                self.notifier.send_photo(frame, caption)
+            if hasattr(self, 'notifier_debug') and self.notifier_debug and self.notifier_debug.enabled and self.notifier_debug.bot_token:
+                self.notifier_debug.send_photo(frame, caption)
+            else:
+                # fallback to main debug route
+                if hasattr(self, 'notifier_main') and self.notifier_main:
+                    self.notifier_main.send_photo_debug(frame, caption)
+                else:
+                    self.notifier.send_photo_debug(frame, caption)
+        elif route == 'debug':
+            if hasattr(self, 'notifier_debug') and self.notifier_debug and self.notifier_debug.enabled and self.notifier_debug.bot_token:
+                self.notifier_debug.send_photo(frame, caption)
+            else:
+                if hasattr(self, 'notifier_main') and self.notifier_main:
+                    self.notifier_main.send_photo_debug(frame, caption)
+                else:
+                    self.notifier.send_photo_debug(frame, caption)
+        else:
+            if hasattr(self, 'notifier_main') and self.notifier_main:
+                self.notifier_main.send_photo(frame, caption)
+            else:
+                self.notifier.send_photo(frame, caption)
 
     def _apply_roi_mask(self, frame):
         h, w = frame.shape[:2]
