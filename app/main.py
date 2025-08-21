@@ -39,7 +39,7 @@ def run():
 
     detector = PlateDetector(cfg.detector.cascade_path, cfg.detector.min_area, cfg.detector.debug_draw)
     ocr = PlateOCR(cfg.ocr.enabled, cfg.ocr.tesseract_cmd, cfg.ocr.psm, cfg.ocr.whitelist)
-    rules = load_rules(cfg.rules.allowed_csv, cfg.rules.denied_csv, cfg.rules.watchlist_csv)
+    rules = load_rules(cfg.rules.allowed_csv, cfg.rules.denied_csv, cfg.rules.watchlist_csv, getattr(cfg.rules, 'ignored_csv', None))
     gate = GateActuator(cfg.actions_gate.mode, http=cfg.actions_gate.http.__dict__ if hasattr(cfg.actions_gate.http, "__dict__") else None)
     alarm = AlarmActuator(cfg.actions_alarm.mode, http=cfg.actions_alarm.http.__dict__ if hasattr(cfg.actions_alarm.http, "__dict__") else None)
     notifier_main = TelegramNotifier(
@@ -109,6 +109,8 @@ def run():
         unreadable_min_hits=int(getattr(cfg, 'notify_filters', {}).get('unreadable_min_hits', 1)),
         hit_ttl_sec=float(getattr(cfg, 'notify_filters', {}).get('hit_ttl_sec', 1.5)),
         center_tolerance_px=int(getattr(cfg, 'notify_filters', {}).get('center_tolerance_px', 40)),
+        min_box_area_px=int(getattr(cfg, 'notify_filters', {}).get('min_box_area_px', 0)) if 'notify_filters' in cfg.__dict__ else 0,
+        max_box_area_px=int(getattr(cfg, 'notify_filters', {}).get('max_box_area_px', 0)) if 'notify_filters' in cfg.__dict__ else 0,
         dir_require_cross=bool(getattr(cfg.direction, 'require_line_cross', False)),
         route_unreadable=str(getattr(cfg, 'notify_routes', {}).get('unreadable', 'debug')),
         route_readable=str(getattr(cfg, 'notify_routes', {}).get('readable', 'main')),

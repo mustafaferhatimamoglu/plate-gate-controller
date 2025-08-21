@@ -8,6 +8,7 @@ class RuleSets:
     allowed: Set[str]
     denied: Set[str]
     watchlist: Dict[str, Optional[str]]  # plate -> group (optional)
+    ignored: Set[str]
 
 
 def _load_csv_set(path: str) -> Set[str]:
@@ -38,17 +39,20 @@ def _load_watchlist(path: str) -> Dict[str, Optional[str]]:
     return m
 
 
-def load_rules(allowed_csv: str, denied_csv: str, watchlist_csv: str) -> RuleSets:
+def load_rules(allowed_csv: str, denied_csv: str, watchlist_csv: str, ignored_csv: Optional[str] = None) -> RuleSets:
     allowed = _load_csv_set(allowed_csv)
     denied = _load_csv_set(denied_csv)
     watch = _load_watchlist(watchlist_csv)
-    return RuleSets(allowed=allowed, denied=denied, watchlist=watch)
+    ignored = _load_csv_set(ignored_csv) if ignored_csv else set()
+    return RuleSets(allowed=allowed, denied=denied, watchlist=watch, ignored=ignored)
 
 
 def decide(rules: RuleSets, plate: str) -> str:
     plate_u = (plate or "").upper()
     if not plate_u:
         return "unknown"
+    if plate_u in rules.ignored:
+        return "ignore"
     if plate_u in rules.denied:
         return "deny"
     if plate_u in rules.allowed:
@@ -56,4 +60,3 @@ def decide(rules: RuleSets, plate: str) -> str:
     if plate_u in rules.watchlist:
         return "watch"
     return "unknown"
-

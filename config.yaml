@@ -16,6 +16,7 @@ rules:
   allowed_csv: data/allowed.csv
   denied_csv: data/denied.csv
   watchlist_csv: data/watchlist.csv
+  ignored_csv: data/ignored.csv
   debounce_sec: 15
 actions:
   gate:
@@ -76,6 +77,9 @@ notify_filters:
   unreadable_min_hits: 1
   hit_ttl_sec: 1.0
   center_tolerance_px: 40
+  # Size gating to ignore very distant/very large detections
+  # min_box_area_px: 2500   # uncomment/tune as needed
+  # max_box_area_px: 0      # 0 disables upper bound
 notify_routes:
   unreadable: both
   readable: both

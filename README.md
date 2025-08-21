@@ -120,6 +120,11 @@ ROI Basics
   - `roi.rect: [x1, y1, x2, y2]`
   - `roi.polygon: [[x, y], ...]`
 
+Ignore & Distance Filters
+
+- Ignore specific plates entirely by listing them in `data/ignored.csv` and setting `rules.ignored_csv` in `config.yaml` (already default). These plates will not notify or actuate.
+- Filter very distant/very small detections using `notify_filters.min_box_area_px` (bbox width*height in pixels). Optionally set `notify_filters.max_box_area_px` to drop overly large boxes.
+
 Noise Control and Routing
 
 - Direction gating:

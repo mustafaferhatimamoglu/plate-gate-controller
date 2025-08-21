@@ -3,7 +3,10 @@ from typing import Optional
 
 import cv2
 import numpy as np
-import pytesseract
+try:
+    import pytesseract  # type: ignore
+except Exception:  # pragma: no cover
+    pytesseract = None
 
 
 class PlateOCR:
@@ -33,7 +36,7 @@ class PlateOCR:
         return text
 
     def read_text(self, roi) -> Optional[str]:
-        if not self.enabled:
+        if not self.enabled or pytesseract is None:
             return None
         try:
             proc = self._preprocess(roi)
@@ -43,4 +46,3 @@ class PlateOCR:
             return cleaned or None
         except Exception:
             return None
-

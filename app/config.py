@@ -33,6 +33,7 @@ class RulesConfig:
     allowed_csv: str = "data/allowed.csv"
     denied_csv: str = "data/denied.csv"
     watchlist_csv: str = "data/watchlist.csv"
+    ignored_csv: str = "data/ignored.csv"
     debounce_sec: int = 15
 
 

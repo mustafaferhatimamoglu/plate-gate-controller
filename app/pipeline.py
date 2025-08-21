@@ -46,6 +46,9 @@ class Pipeline:
         unreadable_min_hits: int = 1,
         hit_ttl_sec: float = 1.5,
         center_tolerance_px: int = 40,
+        # Size gating (approx distance via bbox area)
+        min_box_area_px: int = 0,
+        max_box_area_px: int = 0,
         # Routes
         route_unreadable: str = "debug",
         route_readable: str = "main",
@@ -91,6 +94,9 @@ class Pipeline:
         self.hit_ttl_sec = float(hit_ttl_sec)
         self.center_tolerance_px = int(center_tolerance_px)
         self._hit_map: Dict[Tuple[int, int], Tuple[int, float]] = {}
+        # Size gating
+        self.min_box_area_px = max(0, int(min_box_area_px))
+        self.max_box_area_px = max(0, int(max_box_area_px))
         # Routes
         self.route_unreadable = route_unreadable
         self.route_readable = route_readable
@@ -177,6 +183,12 @@ class Pipeline:
         unreadable_hash = None
         unreadable_dhash = None
         for (x, y, w, h) in boxes:
+            # Optional size gating to avoid very distant or overly large boxes
+            area = float(w) * float(h)
+            if self.min_box_area_px and area < self.min_box_area_px:
+                continue
+            if self.max_box_area_px and area > self.max_box_area_px:
+                continue
             roi = frame[y:y + h, x:x + w]
             plate = self.ocr.read_text(roi) or ""
             plate = plate.strip()
@@ -202,6 +214,10 @@ class Pipeline:
                         unreadable_hash = None
                         unreadable_dhash = None
                 # update direction state for next comparisons
+                self._update_direction_state(current_center)
+                continue
+            # Skip if plate is explicitly ignored
+            if hasattr(self.rules, 'ignored') and plate.upper() in self.rules.ignored:
                 self._update_direction_state(current_center)
                 continue
             decision = decide(self.rules, plate)
